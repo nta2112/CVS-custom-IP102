@@ -77,6 +77,8 @@ def save_results_csv(save_dir, task_id, num_classes, cnn_top1, nme_top1,
         'R@5': retrieval_metrics.get('R@5', 0),
         'R@10': retrieval_metrics.get('R@10', 0),
         'mAP': retrieval_metrics.get('mAP_macro', 0),
+        'R@1_S': openworld_metrics.get('R@1_S', None),
+        'R@1_U': openworld_metrics.get('R@1_U', None),
         'AUROC': openworld_metrics.get('AUROC', None),
         'FPR95': openworld_metrics.get('FPR@TPR95', None),
         'Plasticity': lifelong_metrics.get('Plasticity', 0),
@@ -84,8 +86,8 @@ def save_results_csv(save_dir, task_id, num_classes, cnn_top1, nme_top1,
         'Overall': lifelong_metrics.get('Overall', 0),
     }
     
-    header = ['task', 'numclass', 'cnn_top1', 'nme_top1', 'R@1', 'R@5', 'R@10', 'mAP', 
-              'AUROC', 'FPR95', 'Plasticity', 'Forgetting', 'Overall']
+    header = ['task', 'numclass', 'cnn_top1', 'nme_top1', 'R@1', 'R@5', 'R@10', 'mAP',
+              'R@1_S', 'R@1_U', 'AUROC', 'FPR95', 'Plasticity', 'Forgetting', 'Overall']
     
     file_exists = os.path.exists(csv_path)
     

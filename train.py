@@ -408,6 +408,8 @@ retrieval_metrics = {
     'mAP_macro': record.get('map_macro', 0),
 }
 openworld_metrics = {
+    'R@1_S': record.get('r@1_s', None),
+    'R@1_U': record.get('r@1_u', None),
     'AUROC': record.get('auroc', None),
     'FPR@TPR95': record.get('fpr@tpr95', None),
 }

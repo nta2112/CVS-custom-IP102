@@ -4,10 +4,35 @@ import torch.nn.functional as F
 import matplotlib.pyplot as plt
 from copy import deepcopy
 from torch.utils.data import Dataset, DataLoader
+import torch.nn as nn
 #import torch_optimizer, pdb
 from easydict import EasyDict as edict
 from torch import optim
 from models import cifar, imagenet, resnet
+
+
+def unwrap_model(model):
+    """Unwrap model from DataParallel if wrapped."""
+    if isinstance(model, nn.DataParallel):
+        return model.module
+    return model
+
+
+def get_loader_kwargs(batch_size, num_gpus, num_workers):
+    """Get DataLoader kwargs for multi-GPU safety.
+    
+    Ensures drop_last=True and batch_size divisible by num_gpus when using multiple GPUs.
+    """
+    kwargs = {
+        'batch_size': batch_size,
+        'num_workers': num_workers,
+        'pin_memory': True,
+    }
+    if num_gpus > 1:
+        if batch_size % num_gpus != 0:
+            raise ValueError(f"batch_size ({batch_size}) must be divisible by num_gpus ({num_gpus})")
+        kwargs['drop_last'] = True
+    return kwargs
 
 def select_optimizer(opt_name, lr, model, sched_name="cos"):
     # Set optimizer
@@ -68,10 +93,10 @@ def select_model(model_name, dataset, num_classes=None, feature_size=128, nsloss
 
     if "cifar" in dataset:
         model_class = getattr(cifar, "ResNet")
-    elif "imagenet" in dataset:
+    elif "imagenet" in dataset or "ip102" in dataset:
         model_class = getattr(imagenet, "ResNet")
     else:
-        raise NotImplementedError("Please select the appropriate datasets (cifar100, imagenet)")
+        raise NotImplementedError("Please select the appropriate datasets (cifar100, imagenet, ip102)")
     if model_name == "resnet18":
         opt["depth"] = 18
     elif model_name == "resnet32":

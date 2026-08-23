@@ -4,6 +4,7 @@ from tqdm import tqdm
 from sklearn.preprocessing import normalize
 import faiss
 from metrics import select as metricselect
+from metrics import retrieval, openworld, lifelong
 
 # Evaluate 1 epoch
 def eval(net,
@@ -15,6 +16,8 @@ def eval(net,
         prev_gallery_features,
         prev_gallery_labels,
         return_curr_gallery_names = False,
+        seen_classes=None,
+        lifelong_metric=None,
     ):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     net.eval()
@@ -26,6 +29,12 @@ def eval(net,
     list_of_metrics = [metricselect(metricname) for metricname in metric_names]
     requires = [metric.requires for metric in list_of_metrics]
     requires = list(set([x for y in requires for x in y]))
+    
+    retrieval_metric = metricselect('retrieval')
+    requires.extend(retrieval_metric.requires)
+    
+    openworld_metric = metricselect('openworld')
+    requires.extend(openworld_metric.requires)
     #################### OBTAIN GALLERY FEATURES ############
     gallery_feature_colls = []
     gallery_labels = []
@@ -92,7 +101,40 @@ def eval(net,
         'c_recall_2' : list_of_metrics[4](query_labels,k_closest_classes_cosine),
         'c_recall_4' : list_of_metrics[5](query_labels,k_closest_classes_cosine),
     }
+    
+    # Retrieval metrics
+    retrieval_results = retrieval_metric(query_labels, k_closest_classes_cosine)
+    per_class_map = retrieval_results.pop('per_class_map', {})
+    record.update({k.lower(): v for k, v in retrieval_results.items()})
+    
+    # Update lifelong metric with current task's per-class mAP
+    if lifelong_metric is not None:
+        # Get classes for current task (assumes classes are 0 to num_classes-1 for current task)
+        current_task_classes = sorted(per_class_map.keys())
+        map_scores = [per_class_map[cls] for cls in current_task_classes]
+        lifelong_metric.update(session_id, map_scores)
+    
+    # Open-world metrics
+    all_seen = seen_classes is not None and len(seen_classes) == len(np.unique(gallery_labels))
+    openworld_results = openworld_metric(query_labels, k_closest_classes_cosine, 
+                                          seen_classes if seen_classes is not None else set(), 
+                                          all_seen=all_seen)
+    record.update({k.lower(): v for k, v in openworld_results.items()})
+    
+    # Lifelong metrics
+    if lifelong_metric is not None:
+        lifelong_results = lifelong_metric.get_results()
+        record.update({k.lower(): v for k, v in lifelong_results.items()})
+    
     print("c_recall@1: ",record['c_recall_1'], "c_recall@2: ",record['c_recall_2'],"c_recall@4: ",record['c_recall_4'])
+    print("Retrieval: R@1={:.4f}, R@5={:.4f}, R@10={:.4f}, mAP={:.4f}".format(
+        record.get('r@1', 0), record.get('r@5', 0), record.get('r@10', 0), record.get('map_macro', 0)))
+    if 'auroc' in record:
+        print("Open-world: AUROC={:.4f}, FPR@TPR95={:.4f}, R@1_S={:.4f}, R@1_U={:.4f}".format(
+            record.get('auroc', 0), record.get('fpr@tpr95', 0), record.get('r@1_s', 0), record.get('r@1_u', 0)))
+    if 'plasticity' in record:
+        print("Lifelong: Plasticity={:.4f}, Forgetting={:.4f}, Overall={:.4f}".format(
+            record.get('plasticity', 0), record.get('forgetting', 0), record.get('overall', 0)))
     torch.cuda.empty_cache()
 
     if return_curr_gallery_names:

@@ -1,6 +1,6 @@
 import torch, pdb, argparse
 from utils.train_utils import select_model, select_optimizer, icarl, load_center, savefig, savemodel
-from loader import jd, dog, inature, cifar, tinyimagenet
+from loader import jd, dog, inature, cifar, tinyimagenet, ip102
 from torch.utils.data import Dataset, DataLoader
 from evaluate import eval
 import numpy as np
@@ -11,12 +11,12 @@ if __name__ == "__main__":
     parser.add_argument('--jt',action='store_true',help="Enable joint training")
     parser.add_argument('--reindex',action='store_true',help='Enable feature reindexing')
 
-    parser.add_argument('--dataset',default='tinyimagenet',type=str,choices=['cifar100', 'dog','tinyimagenet','inat','product'],help='Dataset')
+    parser.add_argument('--dataset',default='tinyimagenet',type=str,choices=['cifar100', 'dog','tinyimagenet','inat','product','ip102'],help='Dataset')
     parser.add_argument('--exp_name',default='blurry30',type=str,choices=['disjoint', 'blurry10', 'blurry30', 'general10', 'general30', 'general40'])
     parser.add_argument('--load_dir',default='cvs_result',type=str, help='Where to load everything for the previous session.')
     args = parser.parse_args()
 
-    arch = "resnet18" if args.dataset in ["cifar100","tinyimagenet"] else "resnet50"
+    arch = "resnet18" if args.dataset in ["cifar100","tinyimagenet","ip102"] else "resnet50"
     
     # get setting
     exp_short = args.exp_name
@@ -45,6 +45,11 @@ if __name__ == "__main__":
         ckpt_list = ["%s/tiny_%s_cvs%d/ckpt.pth"%(args.load_dir,exp_short,i) for i in range(len(class_list))]
         pretrain = False
         dataset = tinyimagenet.TINYIMAGENET
+    elif args.dataset == "ip102":
+        class_list = [7, 13, 19, 25] if "blur" in args.exp_name else [7, 13, 19, 25]
+        ckpt_list = ["%s/ip102_%s_cvs%d/ckpt.pth"%(args.load_dir,exp_short,i) for i in range(len(class_list))]
+        pretrain = False
+        dataset = ip102.IP102
     ckpt_list[0] = "%s/%s"%(ckpt_list[0][:ckpt_list[0].rfind("_")], ckpt_list[0].split("/")[-1])
     
     print('================================================================')

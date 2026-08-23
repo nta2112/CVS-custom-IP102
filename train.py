@@ -1,5 +1,5 @@
 import torch, os, pdb, argparse, sys, json
-from loader import jd, dog, inature, cifar, tinyimagenet
+from loader import jd, dog, inature, cifar, tinyimagenet, ip102
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
@@ -7,7 +7,8 @@ import numpy as np
 from tqdm import tqdm
 from torch.utils.data import Dataset, DataLoader
 from evaluate import eval, compute_acc
-from utils.train_utils import select_model, select_optimizer, icarl, load_center, savefig, savemodel
+from utils.train_utils import select_model, select_optimizer, icarl, load_center, savefig, savemodel, unwrap_model, get_loader_kwargs
+from metrics.lifelong import LifelongMetric, save_results_csv, save_history_json
 from copy import deepcopy
 from models.normlayer import NormLayer
 from kdloss import KDLoss
@@ -26,7 +27,7 @@ parser.add_argument('--arch', default='resnet18', type=str, choices=['resnet18',
 parser.add_argument('--embed_dim', default=128, type=int, help='Embedding dimension of the network')
 parser.add_argument('--kernels',default=8,type=int,help='Number of workers for pytorch dataloader')
 parser.add_argument('--bs',default=16,type=int, help='Batch size')
-parser.add_argument('--dataset',default='cifar100',type=str,choices=['cifar100', 'tinyimagenet', 'dog', 'inat', 'product'],help='Dataset')
+parser.add_argument('--dataset',default='cifar100',type=str,choices=['cifar100', 'tinyimagenet', 'dog', 'inat', 'product', 'ip102'],help='Dataset')
 parser.add_argument("--sched_name", type=str, default="cos", choices=['cos','none'], help='Learning rate scheduling')
 
 ## Session
@@ -58,6 +59,7 @@ args = parser.parse_args()
 os.makedirs(args.exp_dir, exist_ok=True)
 assert args.exp_dir in args.save_dir, 'save_dir should contain %s'%(args.exp_dir)
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
+num_gpus = torch.cuda.device_count() if device == 'cuda' else 0
 if args.session_id > 0 and not os.path.exists(args.load_dir):
     print("%s not exists"%(args.load_dir))
     exit()
@@ -98,6 +100,10 @@ elif args.dataset == "cifar100":
 elif args.dataset == "tinyimagenet":
     class_list = [200 for _ in range(10)] if "blur" in args.exp_name else [20, 40, 60, 80, 100, 120, 140, 160, 180, 200]
     dataset = tinyimagenet.TINYIMAGENET
+    pretrain = False
+elif args.dataset == "ip102":
+    class_list = [7, 13, 19, 25] if "blur" in args.exp_name else [7, 13, 19, 25]
+    dataset = ip102.IP102
     pretrain = False
 
 # Make sure INITIAL information exists
@@ -140,20 +146,20 @@ if args.session_id == 1:
 print('==> Preparing data [%s]..'%(args.exp_name))
 ### load gallery data
 eval_trainset = dataset(mode="gallery", session_id=args.session_id,joint_train=args.jt,exp_name=args.exp_name)
-eval_trainloader = DataLoader(eval_trainset, batch_size=100, shuffle=False, num_workers=args.kernels)
+eval_trainloader = DataLoader(eval_trainset, **get_loader_kwargs(100, num_gpus, args.kernels), shuffle=False)
 ### load testing query data
 testset = dataset(mode="test",session_id=args.session_id,exp_name=args.exp_name)
-testloader = DataLoader(testset, batch_size=100, shuffle=False, num_workers=args.kernels)
+testloader = DataLoader(testset, **get_loader_kwargs(100, num_gpus, args.kernels), shuffle=False)
 ### load validation query data
 valset = dataset(mode="val",session_id=args.session_id,exp_name=args.exp_name)
-valloader = DataLoader(valset, batch_size=100, shuffle=False, num_workers=args.kernels)
+valloader = DataLoader(valset, **get_loader_kwargs(100, num_gpus, args.kernels), shuffle=False)
 ### load training data
 trainset = dataset(mode="train",session_id=args.session_id,joint_train=args.jt,exp_name=args.exp_name)
 prev_exem_names, prev_exem_labels = None, None
 if args.replay:# add replayed data to train set
     prev_exem_names, prev_exem_labels = np.load(os.path.join(args.load_dir,'exem_names.npy')), np.load(os.path.join(args.load_dir, 'exem_labels.npy'))
     trainset.add_memory(prev_exem_names, prev_exem_labels)
-trainloader = DataLoader(trainset,batch_size=args.bs,num_workers=args.kernels,shuffle=True,drop_last=True)
+trainloader = DataLoader(trainset, **get_loader_kwargs(args.bs, num_gpus, args.kernels), shuffle=True)
 if args.loss_d:# enable inter-session data coherence loss
     src_centers, _, _ = load_center(args.load_dir)
     src_centers = src_centers.to(device)
@@ -166,7 +172,14 @@ else:
     prev_gallery_features, prev_gallery_labels, prev_gallery_names = None, None, []
 
 
+# Initialize lifelong metric
+lifelong_metric = LifelongMetric(num_tasks=len(class_list))
+# Load previous mAP matrix if exists
+if args.session_id > 0 and os.path.exists(os.path.join(args.load_dir, 'mAP_matrix.npy')):
+    lifelong_metric.mAP_matrix = np.load(os.path.join(args.load_dir, 'mAP_matrix.npy'), allow_pickle=True).tolist()
 
+# Compute seen classes for open-world evaluation
+seen_classes = set(range(class_list[args.session_id]))
 
 
 # Load net, loss, optimizer, scheduler
@@ -200,6 +213,8 @@ if (args.loss_m or args.bct or args.lwf or args.mmd) and args.session_id > 0:
     old_net, old_classifier = old_net.to(device), old_classifier.to(device)
     print('==> Load old model successfully..')
 net = net.to(device)
+if num_gpus > 1:
+    net = nn.DataParallel(net)
 optimizer, scheduler = select_optimizer(opt_name="sgd", lr=args.lr, model=net, sched_name=args.sched_name)
 triplet_criterion = nn.TripletMarginLoss(margin=0.1)
 ce_criterion = nn.CrossEntropyLoss()
@@ -333,6 +348,8 @@ for epoch in range(start_epoch, start_epoch+args.n_epochs):
         reindex=args.reindex,
         prev_gallery_features=prev_gallery_features,
         prev_gallery_labels=prev_gallery_labels,
+        seen_classes=seen_classes,
+        lifelong_metric=lifelong_metric,
     )
     e_recall_history.append(record['e_recall_1'])
     savefig(e_recall_history,args.save_dir,"validation e_recall_1")
@@ -359,6 +376,8 @@ record, curr_gallery_features, curr_gallery_labels, curr_gallery_names = eval(
     prev_gallery_features=prev_gallery_features,
     prev_gallery_labels=prev_gallery_labels,
     return_curr_gallery_names=True,
+    seen_classes=seen_classes,
+    lifelong_metric=lifelong_metric,
 )
 if prev_gallery_features is not None:
     gallery_features = np.vstack((curr_gallery_features,prev_gallery_features))
@@ -372,6 +391,40 @@ with open(os.path.join(args.save_dir,"result.json"),"w",encoding="utf-8") as f: 
 np.save(os.path.join(args.save_dir,"gallery_features.npy"),gallery_features)
 np.save(os.path.join(args.save_dir,"gallery_labels.npy"),gallery_labels)
 np.save(os.path.join(args.save_dir,"gallery_names.npy"),gallery_names)
+
+# Save results.csv and history.json
+cnn_top1 = record.get('c_recall_1', 0)
+nme_top1 = record.get('c_recall_1', 0)  # Using same as cnn_top1 for now
+retrieval_metrics = {
+    'R@1': record.get('r@1', 0),
+    'R@5': record.get('r@5', 0),
+    'R@10': record.get('r@10', 0),
+    'mAP_macro': record.get('map_macro', 0),
+}
+openworld_metrics = {
+    'AUROC': record.get('auroc', None),
+    'FPR@TPR95': record.get('fpr@tpr95', None),
+}
+lifelong_metrics = {
+    'Plasticity': record.get('plasticity', 0),
+    'Forgetting': record.get('forgetting', 0),
+    'Overall': record.get('overall', 0),
+}
+save_results_csv(args.save_dir, args.session_id, class_list[args.session_id], 
+                 cnn_top1, nme_top1, retrieval_metrics, openworld_metrics, lifelong_metrics)
+
+# Save history.json
+history = {
+    'session_id': args.session_id,
+    'class_list': class_list,
+    'exp_name': args.exp_name,
+    'dataset': args.dataset,
+    'record': record,
+}
+save_history_json(args.save_dir, history)
+
+# Save mAP matrix for lifelong learning
+np.save(os.path.join(args.save_dir, 'mAP_matrix.npy'), np.array(lifelong_metric.mAP_matrix, dtype=object))
 
 
 

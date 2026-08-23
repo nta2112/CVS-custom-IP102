@@ -26,7 +26,7 @@ class BasicBlock(nn.Module):
             opt=opt, in_channels=planes, out_channels=planes, kernel_size=3, padding=1
         )
         self.downsample = downsample
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = nn.ReLU(inplace=False)
 
     def forward(self, x):
         identity = x
@@ -34,7 +34,7 @@ class BasicBlock(nn.Module):
         out = self.conv2block(out)
         if self.downsample is not None:
             identity = self.downsample(x)
-        out += identity
+        out = out + identity
         out = self.relu(out)
         return out
 
@@ -72,7 +72,7 @@ class Bottleneck(nn.Module):
             out_channels=planes * self.expansion,
             kernel_size=1,
         )
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = nn.ReLU(inplace=False)
         self.downsample = downsample
         self.stride = stride
 
@@ -86,7 +86,7 @@ class Bottleneck(nn.Module):
         if self.downsample is not None:
             identity = self.downsample(x)
 
-        out += identity
+        out = out + identity
         out = self.relu(out)
 
         return out

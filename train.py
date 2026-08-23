@@ -110,6 +110,9 @@ elif args.dataset == "ip102":
 if args.session_id == 1:
     # In the second session, we load net, gallery, and testing query for the session 0 (i.e., first session)
     w = torch.load(os.path.join(args.load_dir,'ckpt.pth'), weights_only=False)['net']
+    # Handle DataParallel checkpoint (strip "module." prefix)
+    if any(k.startswith('module.') for k in w.keys()):
+        w = {k.replace('module.', ''): v for k, v in w.items()}
     w.pop('fc.bias',None)
     net = select_model(args.arch, args.dataset, num_classes=class_list[0], feature_size=args.embed_dim, nsloss=nsloss, pretrain=pretrain)
     net.load_state_dict(w)
@@ -186,6 +189,9 @@ seen_classes = set(range(class_list[args.session_id]))
 net = select_model(args.arch, args.dataset, num_classes=class_list[args.session_id],feature_size=args.embed_dim,nsloss=nsloss,pretrain=pretrain)
 if args.session_id > 0:#initialized with the previous checkpoints
     w = torch.load(os.path.join(args.load_dir,"ckpt.pth"), weights_only=False)['net']
+    # Handle DataParallel checkpoint (strip "module." prefix)
+    if any(k.startswith('module.') for k in w.keys()):
+        w = {k.replace('module.', ''): v for k, v in w.items()}
     w.pop('fc.bias',None)
     old_n_classes = class_list[args.session_id-1]
     n_classes = class_list[args.session_id]

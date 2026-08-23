@@ -124,6 +124,7 @@ def savemodel(net, epoch, c_recall_1, save_dir):
     if not os.path.isdir(save_dir):
         os.mkdir(save_dir)
     print('Saving..')
+    net = unwrap_model(net)
     state = {'net': net.state_dict(),'acc': c_recall_1,'epoch': epoch,}
     torch.save(state, '%s/ckpt.pth'%(save_dir))
 

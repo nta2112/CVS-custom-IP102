@@ -129,9 +129,10 @@ def eval(net,
     print("c_recall@1: ",record['c_recall_1'], "c_recall@2: ",record['c_recall_2'],"c_recall@4: ",record['c_recall_4'])
     print("Retrieval: R@1={:.4f}, R@5={:.4f}, R@10={:.4f}, mAP={:.4f}".format(
         record.get('r@1', 0), record.get('r@5', 0), record.get('r@10', 0), record.get('map_macro', 0)))
-    if 'auroc' in record:
+    auroc = record.get('auroc')
+    if auroc is not None:
         print("Open-world: AUROC={:.4f}, FPR@TPR95={:.4f}, R@1_S={:.4f}, R@1_U={:.4f}".format(
-            record.get('auroc', 0), record.get('fpr@tpr95', 0), record.get('r@1_s', 0), record.get('r@1_u', 0)))
+            auroc, record.get('fpr@tpr95', 0), record.get('r@1_s', 0), record.get('r@1_u', 0)))
     if 'plasticity' in record:
         print("Lifelong: Plasticity={:.4f}, Forgetting={:.4f}, Overall={:.4f}".format(
             record.get('plasticity', 0), record.get('forgetting', 0), record.get('overall', 0)))

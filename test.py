@@ -66,7 +66,7 @@ if __name__ == "__main__":
 
         # load model with trained weights
         net = select_model(arch, args.dataset, n_classes, feature_size=128, nsloss=True, pretrain=pretrain)
-        w = torch.load(ckpt_name)["net"]
+        w = torch.load(ckpt_name, weights_only=False)["net"]
         w.pop('fc.bias',None)
         w.pop('old_classifier.weight',None)
         net.load_state_dict(w)

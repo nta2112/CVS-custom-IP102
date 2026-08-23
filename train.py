@@ -109,7 +109,7 @@ elif args.dataset == "ip102":
 # Make sure INITIAL information exists
 if args.session_id == 1:
     # In the second session, we load net, gallery, and testing query for the session 0 (i.e., first session)
-    w = torch.load(os.path.join(args.load_dir,'ckpt.pth'))['net']
+    w = torch.load(os.path.join(args.load_dir,'ckpt.pth'), weights_only=False)['net']
     w.pop('fc.bias',None)
     net = select_model(args.arch, args.dataset, num_classes=class_list[0], feature_size=args.embed_dim, nsloss=nsloss, pretrain=pretrain)
     net.load_state_dict(w)
@@ -185,7 +185,7 @@ seen_classes = set(range(class_list[args.session_id]))
 # Load net, loss, optimizer, scheduler
 net = select_model(args.arch, args.dataset, num_classes=class_list[args.session_id],feature_size=args.embed_dim,nsloss=nsloss,pretrain=pretrain)
 if args.session_id > 0:#initialized with the previous checkpoints
-    w = torch.load(os.path.join(args.load_dir,"ckpt.pth"))['net']
+    w = torch.load(os.path.join(args.load_dir,"ckpt.pth"), weights_only=False)['net']
     w.pop('fc.bias',None)
     old_n_classes = class_list[args.session_id-1]
     n_classes = class_list[args.session_id]
@@ -366,7 +366,7 @@ for epoch in range(start_epoch, start_epoch+args.n_epochs):
 # Evaluate using testing query
 print("\n\n=============== [ TEST] ===============\n\n")
 print("load the one with the highest validation recall@1 for final testing")
-ckpt = torch.load('%s/ckpt.pth'%(args.save_dir))
+ckpt = torch.load('%s/ckpt.pth'%(args.save_dir), weights_only=False)
 net.load_state_dict(ckpt['net'],strict=False)
 net.eval()
 record, curr_gallery_features, curr_gallery_labels, curr_gallery_names = eval(

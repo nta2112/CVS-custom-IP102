@@ -54,17 +54,43 @@ class OpenWorldMetric:
         return np.array(scores)
     
     def compute_auroc(self, is_unseen, ood_scores):
+        labels = np.asarray(is_unseen, dtype=bool)
+        scores = np.asarray(ood_scores, dtype=float)
+        valid = np.isfinite(scores)
+
+        if valid.sum() == 0:
+            return None
+        labels = labels[valid]
+        scores = scores[valid]
+
+        if labels.size == 0 or np.unique(labels).size < 2:
+            return 0.5
+        if np.allclose(scores, scores[0]):
+            return 0.5
+
         try:
-            return roc_auc_score(is_unseen, ood_scores)
-        except ValueError:
+            return float(roc_auc_score(labels, scores))
+        except (ValueError, TypeError):
             return 0.5
     
     def compute_fpr_at_tpr95(self, is_unseen, ood_scores):
+        labels = np.asarray(is_unseen, dtype=bool)
+        scores = np.asarray(ood_scores, dtype=float)
+        valid = np.isfinite(scores)
+
+        if valid.sum() == 0:
+            return 1.0
+
+        labels = labels[valid]
+        scores = scores[valid]
+
         try:
-            fpr, tpr, thresholds = roc_curve(is_unseen, ood_scores)
+            fpr, tpr, thresholds = roc_curve(labels, scores)
+            if tpr.size == 0 or not np.any(np.isfinite(tpr)):
+                return 1.0
             idx = np.argmin(np.abs(tpr - 0.95))
-            return fpr[idx]
-        except ValueError:
+            return float(fpr[idx])
+        except (ValueError, TypeError):
             return 1.0
 
 

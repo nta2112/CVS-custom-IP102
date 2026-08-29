@@ -24,3 +24,19 @@ def test_openworld_auroc_handles_nan_scores_and_constant_labels():
 
     assert np.isfinite(result)
     assert 0.0 <= result <= 1.0
+
+
+def test_openworld_no_unseen_returns_safe_values():
+    metric = OpenWorldMetric()
+    query_labels = np.array([[0], [1], [0]])
+    k_closest = np.array([
+        [0, 1, 2],
+        [1, 0, 2],
+        [0, 2, 1],
+    ])
+
+    result = metric(query_labels, k_closest, {0, 1}, all_seen=True)
+
+    assert result['R@1_U'] == 0.0
+    assert result['AUROC'] == 0.5
+    assert result['FPR@TPR95'] == 1.0

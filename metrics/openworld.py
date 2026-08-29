@@ -21,10 +21,10 @@ class OpenWorldMetric:
         is_unseen = ~is_seen
         
         if all_seen or not is_unseen.any():
-            results['R@1_S'] = self.compute_recall_at_1(query_labels[is_seen], k_closest_classes[is_seen]) if is_seen.any() else None
-            results['R@1_U'] = None
-            results['AUROC'] = None
-            results['FPR@TPR95'] = None
+            results['R@1_S'] = self.compute_recall_at_1(query_labels[is_seen], k_closest_classes[is_seen]) if is_seen.any() else 0.0
+            results['R@1_U'] = 0.0
+            results['AUROC'] = 0.5
+            results['FPR@TPR95'] = 1.0
             return results
         
         results['R@1_S'] = self.compute_recall_at_1(query_labels[is_seen], k_closest_classes[is_seen]) if is_seen.any() else 0.0

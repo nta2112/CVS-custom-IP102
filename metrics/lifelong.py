@@ -76,12 +76,12 @@ def save_results_csv(save_dir, task_id, num_classes, cnn_top1, nme_top1,
 
     def clean_value(value):
         if value is None:
-            return None
+            return 0.0
         try:
             v = float(value)
             if np.isfinite(v):
                 return v
-            return None
+            return 0.0
         except (TypeError, ValueError):
             return value
     
